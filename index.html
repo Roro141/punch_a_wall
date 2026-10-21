@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Punch Wall</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil:wght@800;900&family=JetBrains+Mono:wght@400;700&display=swap"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/landing.css" />
+  </head>
+  <body>
+    <video id="cam" playsinline muted></video>
+    <canvas id="scene"></canvas>
+    <canvas id="overlay"></canvas>
+
+    <div id="start">
+      <div class="tape" aria-hidden="true"></div>
+      <p class="label site-id">Site 04 / Wall B / Do not lean</p>
+      <h1 class="stencil" aria-label="Punch the wall.">
+        <span>Punch</span><span>the</span><span>Wall<i>.</i></span>
+      </h1>
+      <ol class="steps">
+        <li><b>01</b>Stand 1.5m back</li>
+        <li><b>02</b>Make a fist</li>
+        <li><b>03</b>Swing</li>
+      </ol>
+      <button id="start-btn" class="sign">Start swinging</button>
+      <p class="label">Your camera stays on your device. Nothing is uploaded.</p>
+      <p class="label keys"><kbd>D</kbd> debug &nbsp; <kbd>R</kbd> reset &nbsp; / &nbsp; click = test punch</p>
+      <p id="model-status" class="label">loading hand model…</p>
+    </div>
+
+    <div id="panel"></div>
+    <button id="reset">Reset wall</button>
+    <div id="msg" hidden></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

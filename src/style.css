@@ -1,0 +1,105 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #111;
+  color: #eee;
+  font-family: system-ui, sans-serif;
+}
+
+#cam,
+#scene,
+#overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#cam {
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+#overlay {
+  pointer-events: none;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px 18px;
+  background: #e8572a;
+  color: #fff;
+  font-weight: 600;
+}
+
+button:hover {
+  background: #f06a3e;
+}
+
+#reset {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+}
+
+#panel {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: 240px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 8px;
+  font-size: 12px;
+  display: none;
+}
+
+body.debug #panel {
+  display: block;
+}
+
+#panel h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+#panel label {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  margin-bottom: 6px;
+}
+
+#panel input {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+#panel button {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: #444;
+}
+
+#msg {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: rgba(160, 30, 30, 0.9);
+}
+
+[hidden] {
+  display: none !important;
+}
