@@ -45,10 +45,12 @@ button:hover {
   background: #f06a3e;
 }
 
-#reset {
+#controls {
   position: fixed;
   right: 16px;
   bottom: 16px;
+  display: flex;
+  gap: 8px;
 }
 
 #panel {
@@ -61,6 +63,8 @@ button:hover {
   border-radius: 8px;
   font-size: 12px;
   display: none;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
 }
 
 body.debug #panel {

@@ -1,13 +1,22 @@
 import type { HandLandmarker } from '@mediapipe/tasks-vision'
+import {
+  applyCalibration,
+  CalibrationSession,
+  loadCalibration,
+  saveCalibration,
+  type Calibration,
+} from './calibration/calibrate'
+import { CalibrationScreen } from './calibration/screen'
 import { cameraError, startCamera, toScreen } from './camera'
-import { loadTuning } from './config'
+import { config, loadConfig, saveConfig } from './config'
+import { SessionLogger, type LogHand } from './debug/logger'
 import { DebugOverlay, type ScreenHand } from './debug/overlay'
 import { mountTuningPanel } from './debug/tuningPanel'
 import { playImpact, unlockAudio } from './fx/audio'
 import { addFlash, drawFlashes } from './fx/flash'
 import { addShake, applyShake, resetShake } from './fx/shake'
 import { ShardWorld } from './physics/world'
-import { boundingBox, boxCenter, boxSize, fistScore } from './tracking/features'
+import { boundingBox, boxCenter, FeatureTracker, type RawHand } from './tracking/features'
 import { createHandTracker } from './tracking/handTracker'
 import { PunchDetector, type HandSample } from './tracking/punchDetector'
 import { Wall } from './wall/shatter'
@@ -22,9 +31,15 @@ const msg = document.querySelector<HTMLElement>('#msg')!
 const sceneCtx = scene.getContext('2d')!
 const overlayCtx = overlayCanvas.getContext('2d')!
 
-const tuning = loadTuning()
-const detector = new PunchDetector(tuning)
+// Saved settings already include the last calibration; apply the calibration
+// on its own only if the settings got lost.
+let calibration: Calibration | null = loadCalibration()
+if (!loadConfig() && calibration) applyCalibration(calibration)
+
+const features = new FeatureTracker()
+const detector = new PunchDetector()
 const overlay = new DebugOverlay()
+const logger = new SessionLogger()
 const wall = new Wall()
 const world = new ShardWorld()
 
@@ -35,9 +50,14 @@ let tracker: HandLandmarker | null = null
 let hands: ScreenHand[] = []
 let inferMs = 0
 let fps = 60
+let trackFps = 0
+let lastTrackAt = 0
 let status = 'no camera'
+let session: CalibrationSession | null = null
 
-mountTuningPanel(document.querySelector('#panel')!, tuning)
+const panel = mountTuningPanel(document.querySelector('#panel')!, () => {
+  if (calibration) applyCalibration(calibration)
+})
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -80,7 +100,40 @@ function resetWall() {
   resetShake()
 }
 
-// --- hand tracking ---------------------------------------------------------
+// --- calibration -------------------------------------------------------------
+
+const calibScreen = new CalibrationScreen(document.querySelector('#calib')!, {
+  onRedo: startCalibration,
+  onFinish: finishCalibration,
+})
+
+function startCalibration() {
+  if (!tracker) {
+    showMessage('Calibration needs the camera and hand model.')
+    return
+  }
+  msg.hidden = true
+  session = new CalibrationSession(performance.now())
+  detector.reset()
+  document.body.classList.add('calibrating')
+  calibScreen.show()
+}
+
+function finishCalibration(result: Calibration | null) {
+  if (result) {
+    calibration = result
+    saveCalibration(result)
+    applyCalibration(result)
+    saveConfig()
+    panel.refresh()
+  }
+  session = null
+  detector.reset()
+  calibScreen.hide()
+  document.body.classList.remove('calibrating')
+}
+
+// --- hand tracking -------------------------------------------------------------
 
 const trackerReady = createHandTracker()
   .then((t) => {
@@ -112,30 +165,50 @@ function track(tracker: HandLandmarker) {
   const now = performance.now()
   const result = tracker.detectForVideo(video, now)
   inferMs = performance.now() - now
+  if (lastTrackAt) trackFps += (1000 / Math.max(now - lastTrackAt, 1) - trackFps) * 0.1
+  lastTrackAt = now
 
-  const samples: HandSample[] = []
-  hands = result.landmarks.map((landmarks, i) => {
+  const raw: RawHand[] = []
+  result.landmarks.forEach((image, i) => {
     let id = result.handedness[i]?.[0]?.categoryName ?? 'Hand'
     // the classifier sometimes calls both hands the same thing
-    if (samples.some((s) => s.id === id)) id += ` ${i + 1}`
-
-    const points = landmarks.map((p) => toScreen(p.x, p.y, video, width, height))
-    const box = boundingBox(points)
-    const center = boxCenter(box)
-    // world landmarks are metric 3D, which keeps the fist score sane when
-    // the fist points straight at the camera
-    const fist = fistScore(result.worldLandmarks[i] ?? landmarks)
-
-    samples.push({ id, x: center.x, y: center.y, size: boxSize(box), fist })
-    return { id, points, box, center }
+    if (raw.some((h) => h.id === id)) id += ` ${i + 1}`
+    raw.push({ id, image, world: result.worldLandmarks[i] })
   })
 
-  const punch = detector.update(samples, now)
-  overlay.record(detector, now)
-  if (punch) {
-    overlay.addPunch(punch)
-    impact(punch.x, punch.y, punch.strength)
+  const aspect = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9
+  const feats = features.update(raw, now, aspect)
+
+  const samples: HandSample[] = []
+  hands = feats.map((f) => {
+    const points = f.image.map((p) => toScreen(p.x, p.y, video, width, height))
+    const box = boundingBox(points)
+    const center = boxCenter(box)
+    samples.push({ id: f.id, x: center.x, y: center.y, palmSize: f.palmSize, growth: f.growth, fist: f.fist })
+    return { id: f.id, points, box, center }
+  })
+
+  if (session) {
+    session.addFrame(feats, now)
+  } else {
+    for (const punch of detector.update(samples, now)) {
+      overlay.addPunch(punch)
+      logger.hit(punch)
+      impact(punch.x, punch.y, punch.strength)
+    }
+    overlay.record(detector, now)
   }
+
+  const logged: LogHand[] = samples.map((s) => ({
+    id: s.id,
+    x: s.x,
+    y: s.y,
+    palm: s.palmSize,
+    growth: s.growth,
+    fist: s.fist,
+    state: detector.tracks.get(s.id)?.state ?? 'IDLE',
+  }))
+  logger.record(now, logged, config)
 }
 
 document.querySelector('#start-btn')!.addEventListener('click', async () => {
@@ -145,7 +218,10 @@ document.querySelector('#start-btn')!.addEventListener('click', async () => {
     await startCamera(video)
     status = 'waiting for model'
     await trackerReady
-    if (tracker) status = 'tracking'
+    if (tracker) {
+      status = 'tracking'
+      if (!calibration) startCalibration()
+    }
     scheduleVideoFrame()
   } catch (err) {
     console.error(err)
@@ -159,19 +235,33 @@ document.querySelector('#start-btn')!.addEventListener('click', async () => {
 scene.addEventListener('pointerdown', (e) => {
   unlockAudio()
   const p = { x: e.clientX, y: e.clientY, strength: 0.6 }
-  overlay.addPunch({ ...p, reason: 'click', hand: 'mouse', time: performance.now() })
+  const punch = { ...p, peak: 0, reason: 'click' as const, hand: 'mouse', time: performance.now() }
+  overlay.addPunch(punch)
+  logger.hit(punch)
   impact(p.x, p.y, p.strength)
 })
 
 document.querySelector('#reset')!.addEventListener('click', resetWall)
+document.querySelector('#recalibrate')!.addEventListener('click', startCalibration)
+
+function toggleLogger() {
+  const now = performance.now()
+  if (logger.recording) {
+    logger.stop(now, config, calibration, { width: video.videoWidth, height: video.videoHeight })
+  } else {
+    logger.start(now, config)
+  }
+}
 
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return
-  if (e.key === 'd' || e.key === 'D') {
+  const key = e.key.toLowerCase()
+  if (key === 'd') {
     debug = !debug
     document.body.classList.toggle('debug', debug)
   }
-  if (e.key === 'r' || e.key === 'R') resetWall()
+  if (key === 'r' && !session) resetWall()
+  if (key === 'l') toggleLogger()
 })
 
 // --- render loop -------------------------------------------------------------
@@ -182,6 +272,11 @@ function frame(now: number) {
   const dt = Math.min(now - last, 100)
   last = now
   fps += (1000 / Math.max(dt, 1) - fps) * 0.05
+
+  if (session) {
+    session.tick(now)
+    calibScreen.render(session.view(now))
+  }
 
   world.step(dt, now)
 
@@ -194,11 +289,20 @@ function frame(now: number) {
   drawFlashes(sceneCtx, width, height, now)
   sceneCtx.restore()
 
+  const stats = {
+    fps,
+    trackFps,
+    inferMs,
+    shards: world.shards.length,
+    status: session ? 'calibrating' : status,
+    logMs: logger.recording ? logger.elapsed(now) : null,
+    logFrames: logger.frameCount,
+  }
+
   overlayCtx.clearRect(0, 0, width, height)
   overlay.drawReticles(overlayCtx, hands, detector)
-  if (debug) {
-    overlay.draw(overlayCtx, hands, detector, { fps, inferMs, shards: world.shards.length, status }, now)
-  }
+  if (debug) overlay.draw(overlayCtx, hands, detector, stats, now)
+  overlay.drawRecording(overlayCtx, stats, now)
 
   requestAnimationFrame(frame)
 }

@@ -8,3 +8,7 @@ Thumbs.db
 
 # copied from node_modules on install
 public/mediapipe
+
+# session logs and their plots
+punch-log-*.json
+punch-log-*.png

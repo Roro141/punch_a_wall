@@ -59,15 +59,19 @@ export const config: Config = { ...defaultConfig }
 
 const STORAGE_KEY = 'punch-wall:config:v2'
 
-/** Loads slider overrides saved by the debug panel. */
+/** Loads saved settings (slider changes and calibration). Returns false if there were none. */
 export function loadConfig() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Partial<Config>
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return false
+    const saved = JSON.parse(raw) as Partial<Config>
     for (const key of Object.keys(defaultConfig) as ConfigKey[]) {
       if (typeof saved[key] === 'number') config[key] = saved[key]
     }
+    return true
   } catch {
     // corrupt or blocked storage: just use defaults
+    return false
   }
 }
 

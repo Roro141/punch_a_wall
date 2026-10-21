@@ -1,31 +1,40 @@
-import { defaultTuning, saveTuning, type Tuning } from '../config'
+import { config, resetConfig, saveConfig, type ConfigKey } from '../config'
 
-const fields: { key: keyof Tuning; label: string; min: number; max: number; step: number }[] = [
-  { key: 'fistMin', label: 'fist min', min: 0, max: 1, step: 0.05 },
-  { key: 'growthMin', label: 'growth min /s', min: 0.5, max: 8, step: 0.1 },
-  { key: 'growthPrimed', label: 'growth primed /s', min: 0.2, max: 6, step: 0.1 },
-  { key: 'minFrames', label: 'min frames', min: 1, max: 6, step: 1 },
-  { key: 'vanishMs', label: 'vanish window ms', min: 0, max: 400, step: 10 },
-  { key: 'cooldownMs', label: 'cooldown ms', min: 100, max: 1500, step: 50 },
-  { key: 'smoothing', label: 'smoothing (1 = raw)', min: 0.1, max: 1, step: 0.05 },
+const fields: { key: ConfigKey; min: number; max: number; step: number }[] = [
+  { key: 'STRIKE_RATE', min: 0.5, max: 12, step: 0.05 },
+  { key: 'FIST_ON', min: 0, max: 1, step: 0.05 },
+  { key: 'FIST_OFF', min: 0, max: 1, step: 0.05 },
+  { key: 'FIST_HOLD_MS', min: 0, max: 400, step: 10 },
+  { key: 'STRIKE_PEAK_DROP', min: 0.5, max: 1, step: 0.05 },
+  { key: 'STRIKE_MAX_MS', min: 30, max: 400, step: 10 },
+  { key: 'VANISH_MS', min: 0, max: 400, step: 10 },
+  { key: 'COOLDOWN_MS', min: 100, max: 1500, step: 50 },
+  { key: 'STRENGTH_FULL_RATE', min: 1, max: 20, step: 0.25 },
+  { key: 'GROWTH_WINDOW_MS', min: 33, max: 250, step: 1 },
+  { key: 'EURO_MIN_CUTOFF', min: 0.1, max: 10, step: 0.1 },
+  { key: 'EURO_BETA', min: 0, max: 50, step: 0.5 },
 ]
 
-export function mountTuningPanel(root: HTMLElement, tuning: Tuning) {
+/**
+ * Sliders for the live config. `onDefaults` runs after a reset so the
+ * caller can re-apply calibration on top of the code defaults.
+ */
+export function mountTuningPanel(root: HTMLElement, onDefaults: () => void) {
   root.innerHTML = '<h3>Tuning</h3>'
-  const inputs = new Map<keyof Tuning, { input: HTMLInputElement; value: HTMLElement }>()
+  const inputs = new Map<ConfigKey, { input: HTMLInputElement; value: HTMLElement }>()
 
   for (const field of fields) {
     const row = document.createElement('label')
-    row.innerHTML = `<span>${field.label}</span><output></output>`
+    row.innerHTML = `<span>${field.key}</span><output></output>`
     const input = document.createElement('input')
     input.type = 'range'
     input.min = String(field.min)
     input.max = String(field.max)
     input.step = String(field.step)
     input.addEventListener('input', () => {
-      tuning[field.key] = Number(input.value)
+      config[field.key] = Number(input.value)
       refresh()
-      saveTuning(tuning)
+      saveConfig()
     })
     row.append(input)
     root.append(row)
@@ -35,17 +44,19 @@ export function mountTuningPanel(root: HTMLElement, tuning: Tuning) {
   const reset = document.createElement('button')
   reset.textContent = 'Defaults'
   reset.addEventListener('click', () => {
-    Object.assign(tuning, defaultTuning)
+    resetConfig()
+    onDefaults()
+    saveConfig()
     refresh()
-    saveTuning(tuning)
   })
   root.append(reset)
 
   function refresh() {
     for (const [key, { input, value }] of inputs) {
-      input.value = String(tuning[key])
-      value.textContent = String(tuning[key])
+      input.value = String(config[key])
+      value.textContent = String(Math.round(config[key] * 100) / 100)
     }
   }
   refresh()
+  return { refresh }
 }

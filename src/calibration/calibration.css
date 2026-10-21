@@ -1,0 +1,255 @@
+/* Calibration: a concrete slab bolted to the left of the camera view.
+   Colors and fonts come from the tokens shared in landing.css. */
+
+body.calibrating #scene,
+body.calibrating #controls {
+  display: none;
+}
+
+#calib {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+}
+
+#calib .slab {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: min(420px, 36vw);
+  overflow-y: auto;
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: safe center;
+  justify-items: start;
+  padding: 32px 36px 32px 32px;
+  background: var(--concrete);
+  color: var(--ink);
+  font-family: var(--mono);
+  /* hazard-tape edge where the slab meets the camera */
+  border: 0 solid;
+  border-right-width: 14px;
+  border-image: repeating-linear-gradient(-45deg, var(--hazard) 0 10px, var(--ink) 10px 20px) 14;
+}
+
+/* same grain as the landing wall, softened so small text stays readable */
+#calib .slab::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--noise);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+#calib .slab > * {
+  position: relative;
+  margin: 0;
+}
+
+#calib .unit {
+  text-transform: none;
+}
+
+#calib .label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  line-height: 1.6;
+}
+
+#calib .title {
+  font-family: var(--stencil);
+  font-weight: 900;
+  font-size: clamp(56px, 7vw, 96px);
+  line-height: 0.85;
+  text-transform: uppercase;
+  margin: 12px 0 16px;
+  transform: rotate(-2deg);
+  transform-origin: left center;
+}
+
+#calib .note {
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 34ch;
+  margin-bottom: 24px;
+}
+
+#calib .count {
+  font-family: var(--stencil);
+  font-weight: 900;
+  font-size: 140px;
+  line-height: 0.8;
+}
+
+/* progress: hazard tape unrolling across a dark slot */
+#calib .meter {
+  width: 100%;
+  height: 28px;
+  border: 3px solid var(--ink);
+  background: var(--ink);
+  margin-bottom: 14px;
+}
+
+#calib .meter span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: repeating-linear-gradient(-45deg, var(--hazard) 0 12px, var(--ink) 12px 24px);
+}
+
+#calib .tally {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+#calib .tally b {
+  font-family: var(--stencil);
+  font-size: 64px;
+  font-weight: 900;
+  letter-spacing: 0;
+  vertical-align: -0.15em;
+}
+
+#calib .hand {
+  margin-top: 18px;
+  font-weight: 700;
+}
+
+#calib .readout {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px 20px;
+  margin: 8px 0 28px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+#calib .readout dt {
+  margin: 0;
+}
+
+#calib .readout dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+
+#calib .readout .mark {
+  background: var(--hazard);
+  padding: 0 4px;
+}
+
+/* number line: solid ink = normal movement, yellow = trigger, ticks = punches */
+#calib .scale {
+  position: relative;
+  width: 100%;
+  height: 22px;
+  margin: 6px 0 6px;
+  border-bottom: 3px solid var(--ink);
+}
+
+#calib .scale .noise {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 10px;
+  background: var(--ink);
+}
+
+#calib .scale i {
+  position: absolute;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1.5px;
+}
+
+#calib .scale .trigger {
+  width: 6px;
+  margin-left: -3px;
+  height: 30px;
+  background: var(--hazard);
+  outline: 2px solid var(--ink);
+}
+
+#calib .scale .punch {
+  height: 22px;
+  background: var(--ink);
+}
+
+#calib .scale-key {
+  font-size: 10px;
+  margin-bottom: 14px;
+}
+
+#calib .sign {
+  --tilt: -1.5deg;
+  font-family: var(--stencil);
+  font-size: 30px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  color: var(--ink);
+  padding: 14px 34px 11px;
+  border: 3px solid var(--ink);
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 9px 9px, var(--ink) 2.5px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 9px) 9px, var(--ink) 2.5px, transparent 3.5px),
+    radial-gradient(circle at 9px calc(100% - 9px), var(--ink) 2.5px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 9px) calc(100% - 9px), var(--ink) 2.5px, transparent 3.5px),
+    var(--hazard);
+  transform: rotate(var(--tilt));
+  margin-bottom: 18px;
+}
+
+#calib .textbtn {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 6px 0;
+  margin-top: 18px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+#calib .sign + .textbtn {
+  margin-top: 0;
+}
+
+#calib .sign:focus-visible,
+#calib .textbtn:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+}
+
+/* phones: the slab drops to the bottom so the camera stays visible on top */
+@media (max-width: 700px) {
+  #calib .slab {
+    inset: auto 0 0 0;
+    width: auto;
+    max-height: 58vh;
+    padding: 24px 16px 20px;
+    border-right-width: 0;
+    border-top-width: 14px;
+  }
+
+  #calib .title {
+    font-size: clamp(44px, 13vw, 64px);
+  }
+
+  #calib .count {
+    font-size: 96px;
+  }
+}

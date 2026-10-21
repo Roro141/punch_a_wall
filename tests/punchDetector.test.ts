@@ -1,72 +1,109 @@
 import { describe, expect, it } from 'vitest'
-import { PunchDetector, type HandSample } from '../src/tracking/punchDetector'
-import { defaultTuning } from '../src/config'
+import { defaultConfig } from '../src/config'
+import { PunchDetector, type HandSample, type Punch } from '../src/tracking/punchDetector'
 
 const FRAME = 33
+const C = { ...defaultConfig, STRIKE_RATE: 2.5, STRENGTH_FULL_RATE: 6.5 }
 
-function detector() {
-  return new PunchDetector({ ...defaultTuning, smoothing: 1 })
+type F = { growth?: number; fist?: number } | null
+
+/** Feeds one frame per entry (null = hand lost). Returns hits with their frame index. */
+function run(frames: F[], d = new PunchDetector({ ...C }), start = 0) {
+  const hits: (Punch & { frame: number })[] = []
+  frames.forEach((f, i) => {
+    const hands: HandSample[] =
+      f === null ? [] : [{ id: 'Right', x: 400 + i, y: 300, palmSize: 0.1, growth: f.growth ?? 0, fist: f.fist ?? 0.9 }]
+    for (const p of d.update(hands, start + i * FRAME)) hits.push({ ...p, frame: i })
+  })
+  return { hits, d }
 }
 
-// Feed a list of per-frame sizes (null = hand missing). Returns punches with their frame index.
-function run(d: PunchDetector, sizes: (number | null)[], fist = 0.9, start = 0) {
-  const punches = []
-  for (let i = 0; i < sizes.length; i++) {
-    const size = sizes[i]
-    const hands: HandSample[] = size === null ? [] : [{ id: 'Right', x: 400, y: 300, size, fist }]
-    const p = d.update(hands, start + i * FRAME)
-    if (p) punches.push({ ...p, frame: i })
-  }
-  return punches
-}
+const hold = (n: number, fist = 0.9): F[] => Array.from({ length: n }, () => ({ growth: 0, fist }))
+// strike: growth climbs, peaks, falls back
+const strike = (peak = 5): F[] => [{ growth: 3 }, { growth: peak }, { growth: 3 }, { growth: 0 }]
 
-const still = (n: number, size = 100) => Array(n).fill(size)
-// ~15% bigger every frame at 30fps is a growth of ~4.2/s
-const lunge = (n: number, from = 100) => Array.from({ length: n }, (_, i) => from * 1.15 ** (i + 1))
-
-describe('PunchDetector', () => {
-  it('fires on a fist that grows fast', () => {
-    const punches = run(detector(), [...still(5), ...lunge(4)])
-    expect(punches).toHaveLength(1)
-    expect(punches[0].reason).toBe('growth')
-    expect(punches[0].x).toBe(400)
+describe('PunchDetector state machine', () => {
+  it('needs the fist held for FIST_HOLD_MS before FIST_READY', () => {
+    const d = new PunchDetector({ ...C })
+    run(hold(4), d) // 0..99ms
+    expect(d.tracks.get('Right')!.state).toBe('IDLE')
+    run(hold(1), d, 4 * FRAME) // 132ms
+    expect(d.tracks.get('Right')!.state).toBe('FIST_READY')
   })
 
-  it('ignores an open hand moving toward the camera', () => {
-    expect(run(detector(), [...still(5), ...lunge(4)], 0.2)).toHaveLength(0)
+  it('hits once the strike peaks', () => {
+    const { hits } = run([...hold(6), ...strike(5)])
+    expect(hits).toHaveLength(1)
+    expect(hits[0].reason).toBe('strike')
+    expect(hits[0].peak).toBe(5)
+    // fires on the frame where growth drops off the peak, at the hand's position then
+    expect(hits[0].frame).toBe(8)
+    expect(hits[0].x).toBe(408)
   })
 
-  it('ignores a fist that is just held still', () => {
-    expect(run(detector(), still(60))).toHaveLength(0)
+  it('ignores growth from an open hand', () => {
+    expect(run([...hold(6, 0.1), ...strike()].map((f) => f && { ...f, fist: 0.1 })).hits).toHaveLength(0)
   })
 
-  it('ignores slow growth', () => {
-    const slow = Array.from({ length: 30 }, (_, i) => 100 * 1.02 ** i)
-    expect(run(detector(), [...still(5), ...slow])).toHaveLength(0)
+  it('ignores a strike that starts before the fist hold finishes', () => {
+    expect(run([...hold(2), ...strike()]).hits).toHaveLength(0)
   })
 
-  it('counts a hand that vanishes mid-punch', () => {
-    // one frame of growth is primed but not enough frames to fire on its own
-    const punches = run(detector(), [...still(5), 110, null])
-    expect(punches).toHaveLength(1)
-    expect(punches[0].reason).toBe('vanish')
+  it('ignores slow growth under STRIKE_RATE', () => {
+    expect(run([...hold(6), ...Array(30).fill({ growth: 2 })]).hits).toHaveLength(0)
   })
 
-  it('does not count a hand that just leaves the frame', () => {
-    expect(run(detector(), [...still(5), null])).toHaveLength(0)
+  it('uses hysteresis between FIST_OFF and FIST_ON', () => {
+    const d = new PunchDetector({ ...C })
+    run([...hold(6), { growth: 0, fist: 0.5 }], d)
+    expect(d.tracks.get('Right')!.state).toBe('FIST_READY')
+    run([{ growth: 0, fist: 0.3 }], d, 7 * FRAME)
+    expect(d.tracks.get('Right')!.state).toBe('IDLE')
+  })
+
+  it('a score between the thresholds does not start the hold', () => {
+    const d = new PunchDetector({ ...C })
+    run(hold(10, 0.5), d)
+    expect(d.tracks.get('Right')!.state).toBe('IDLE')
+  })
+
+  it('resolves a strike after STRIKE_MAX_MS even if growth keeps climbing', () => {
+    const climbing = Array.from({ length: 10 }, (_, i) => ({ growth: 3 + i }))
+    const { hits } = run([...hold(6), ...climbing])
+    expect(hits).toHaveLength(1)
+    expect(hits[0].time - 6 * FRAME).toBeGreaterThanOrEqual(C.STRIKE_MAX_MS)
+  })
+
+  it('counts a hand lost right after the strike starts (motion blur)', () => {
+    const { hits } = run([...hold(6), { growth: 4 }, null])
+    expect(hits).toHaveLength(1)
+    expect(hits[0].reason).toBe('vanish')
+    expect(hits[0].x).toBe(406) // last seen position
+    expect(hits[0].peak).toBe(4)
+  })
+
+  it('does not count a hand that just leaves while ready', () => {
+    expect(run([...hold(6), null]).hits).toHaveLength(0)
   })
 
   it('respects the cooldown', () => {
-    const d = detector()
-    // two lunges ~300ms apart, then one more well after the cooldown
-    const sizes = [...still(4), ...lunge(3), ...still(4, 152), ...lunge(3, 152), ...still(15, 230), ...lunge(3, 230)]
-    const punches = run(d, sizes)
-    expect(punches).toHaveLength(2)
-    expect(punches[1].time - punches[0].time).toBeGreaterThanOrEqual(defaultTuning.cooldownMs)
+    // second strike 200ms after the first: ignored. third after the cooldown: counts.
+    const frames = [...hold(6), ...strike(), ...hold(2), ...strike(), ...hold(16), ...strike()]
+    const { hits } = run(frames)
+    expect(hits).toHaveLength(2)
+    expect(hits[1].time - hits[0].time).toBeGreaterThanOrEqual(C.COOLDOWN_MS)
   })
 
-  it('needs a few frames of tracking before growth counts', () => {
-    // hand appears already "growing" - typical when it slides into view
-    expect(run(detector(), lunge(2))).toHaveLength(0)
+  it('keeps the cooldown when the hand drops out and comes back', () => {
+    const frames = [...hold(6), { growth: 4 }, null, ...hold(5), ...strike()]
+    const { hits } = run(frames)
+    expect(hits).toHaveLength(1)
+  })
+
+  it('maps peak growth to strength', () => {
+    const d = new PunchDetector({ ...C })
+    expect(d.strength(C.STRIKE_RATE)).toBe(0)
+    expect(d.strength((C.STRIKE_RATE + C.STRENGTH_FULL_RATE) / 2)).toBeCloseTo(0.5)
+    expect(d.strength(100)).toBe(1)
   })
 })

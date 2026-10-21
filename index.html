@@ -12,6 +12,7 @@
     />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/landing.css" />
+    <link rel="stylesheet" href="/src/calibration/calibration.css" />
   </head>
   <body>
     <video id="cam" playsinline muted></video>
@@ -35,8 +36,13 @@
       <p id="model-status" class="label">loading hand model…</p>
     </div>
 
+    <div id="calib" hidden><section class="slab" aria-live="polite"></section></div>
+
     <div id="panel"></div>
-    <button id="reset">Reset wall</button>
+    <div id="controls">
+      <button id="recalibrate">Recalibrate</button>
+      <button id="reset">Reset wall</button>
+    </div>
     <div id="msg" hidden></div>
 
     <script type="module" src="/src/main.ts"></script>
