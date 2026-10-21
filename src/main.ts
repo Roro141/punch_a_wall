@@ -14,8 +14,7 @@ import { DebugOverlay, type ScreenHand } from './debug/overlay'
 import { mountTuningPanel } from './debug/tuningPanel'
 import { playImpact, unlockAudio } from './fx/audio'
 import { addFlash, drawFlashes } from './fx/flash'
-import { addShake, applyShake, resetShake } from './fx/shake'
-import { ShardWorld } from './physics/world'
+import { Stage, type Aim } from './three/stage'
 import { boundingBox, boxCenter, FeatureTracker, type RawHand } from './tracking/features'
 import { createHandTracker } from './tracking/handTracker'
 import { PunchDetector, type HandSample } from './tracking/punchDetector'
@@ -28,7 +27,6 @@ const startScreen = document.querySelector<HTMLElement>('#start')!
 const modelStatus = document.querySelector<HTMLElement>('#model-status')!
 const msg = document.querySelector<HTMLElement>('#msg')!
 
-const sceneCtx = scene.getContext('2d')!
 const overlayCtx = overlayCanvas.getContext('2d')!
 
 // Saved settings already include the last calibration; apply the calibration
@@ -41,7 +39,7 @@ const detector = new PunchDetector()
 const overlay = new DebugOverlay()
 const logger = new SessionLogger()
 const wall = new Wall()
-const world = new ShardWorld()
+const stage = new Stage(scene, wall)
 
 let width = 0
 let height = 0
@@ -63,14 +61,11 @@ function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
   width = window.innerWidth
   height = window.innerHeight
-  for (const canvas of [scene, overlayCanvas]) {
-    canvas.width = Math.round(width * dpr)
-    canvas.height = Math.round(height * dpr)
-  }
-  sceneCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  overlayCanvas.width = Math.round(width * dpr)
+  overlayCanvas.height = Math.round(height * dpr)
   overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0)
   wall.resize(width, height, dpr)
-  world.resize(width, height)
+  stage.resize(width, height, dpr)
 }
 
 let resizeTimer = 0
@@ -87,17 +82,15 @@ function showMessage(text: string) {
 
 function impact(x: number, y: number, strength: number) {
   const now = performance.now()
-  for (const shard of wall.shatterAt(x, y, strength)) world.add(shard, { x, y }, strength, now)
-  addShake(0.35 + 0.65 * strength)
+  stage.addPunch(wall.shatterAt(x, y, strength), x, y, strength, now)
   addFlash(x, y, strength, now)
   playImpact(strength)
 }
 
 function resetWall() {
   wall.rebuild()
-  world.clear()
+  stage.wallRebuilt()
   detector.reset()
-  resetShake()
 }
 
 // --- calibration -------------------------------------------------------------
@@ -278,28 +271,27 @@ function frame(now: number) {
     calibScreen.render(session.view(now))
   }
 
-  world.step(dt, now)
-
-  sceneCtx.save()
-  sceneCtx.clearRect(0, 0, width, height)
-  applyShake(sceneCtx, dt)
+  // the fist light follows the first tracked hand
+  const first = hands[0]
+  const aim: Aim | null = first
+    ? { x: first.center.x, y: first.center.y, state: detector.tracks.get(first.id)?.state ?? 'IDLE' }
+    : null
+  stage.update(dt, now, session ? null : aim)
   // the wall is fully opaque; you only see the camera through punched holes
-  sceneCtx.drawImage(wall.canvas, 0, 0, width, height)
-  world.draw(sceneCtx, now)
-  drawFlashes(sceneCtx, width, height, now)
-  sceneCtx.restore()
+  stage.render()
 
   const stats = {
     fps,
     trackFps,
     inferMs,
-    shards: world.shards.length,
+    shards: stage.shardCount,
     status: session ? 'calibrating' : status,
     logMs: logger.recording ? logger.elapsed(now) : null,
     logFrames: logger.frameCount,
   }
 
   overlayCtx.clearRect(0, 0, width, height)
+  drawFlashes(overlayCtx, width, height, now)
   overlay.drawReticles(overlayCtx, hands, detector)
   if (debug) overlay.draw(overlayCtx, hands, detector, stats, now)
   overlay.drawRecording(overlayCtx, stats, now)

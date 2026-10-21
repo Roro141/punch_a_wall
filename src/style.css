@@ -107,3 +107,10 @@ body.debug #panel {
 [hidden] {
   display: none !important;
 }
+
+/* on phones the message would sit on top of the buttons */
+@media (max-width: 600px) {
+  #msg {
+    bottom: 72px;
+  }
+}

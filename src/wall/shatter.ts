@@ -1,6 +1,5 @@
 import { Delaunay } from 'd3-delaunay'
-import Matter from 'matter-js'
-import { paintBrickWall } from './texture'
+import { brickLayout, paintBrickHeight, paintBrickWall } from './texture'
 import type { Point } from '../tracking/features'
 
 export interface Shard {
@@ -17,6 +16,8 @@ export interface Shard {
 export class Wall {
   canvas = document.createElement('canvas')
   ctx = this.canvas.getContext('2d')!
+  /** height map for the 3D bump map, same layout as `canvas`, 1x resolution */
+  bump = document.createElement('canvas')
   width = 0
   height = 0
   dpr = 1
@@ -28,7 +29,15 @@ export class Wall {
     this.dpr = dpr
     this.canvas.width = Math.round(width * dpr)
     this.canvas.height = Math.round(height * dpr)
+    this.bump.width = Math.round(width)
+    this.bump.height = Math.round(height)
+    paintBrickHeight(this.bump.getContext('2d')!, this.bump.width, this.bump.height)
     this.rebuild()
+  }
+
+  /** how deep the wall is, in px: about half a brick */
+  get thickness() {
+    return Math.round(brickLayout(this.width).brickH * 0.45)
   }
 
   rebuild() {
@@ -70,8 +79,9 @@ export class Wall {
       const cell = voronoi.cellPolygon(i)
       if (!cell) continue
       const poly = cell.slice(0, -1).map(([px, py]) => ({ x: px, y: py }))
-      if (Math.abs(Matter.Vertices.area(poly, true)) < 25) continue
-      if (this.coverage(poly) < 0.4) continue
+      if (Math.abs(polygonArea(poly)) < 25) continue
+      // mostly-solid cells only: a 3D chunk cut half from an old hole looks hollow
+      if (this.coverage(poly) < 0.75) continue
 
       shards.push(this.cutShard(poly))
       this.holes.push(poly)
@@ -115,7 +125,7 @@ export class Wall {
   }
 
   private cutShard(poly: Point[]): Shard {
-    const center = Matter.Vertices.centre(poly)
+    const center = polygonCentroid(poly)
     let minX = Infinity
     let minY = Infinity
     let maxX = -Infinity
@@ -158,11 +168,33 @@ export class Wall {
   // hole doesn't spawn a pile of invisible shards.
   private coverage(poly: Point[]) {
     if (this.holes.length === 0) return 1
-    const c = Matter.Vertices.centre(poly)
+    const c = polygonCentroid(poly)
     const samples = [c, ...poly.map((p) => ({ x: (p.x + c.x) / 2, y: (p.y + c.y) / 2 }))]
     const solid = samples.filter((s) => !this.holes.some((h) => insidePolygon(s, h))).length
     return solid / samples.length
   }
+}
+
+/** Signed area (shoelace). */
+export function polygonArea(poly: Point[]) {
+  let a = 0
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += poly[j].x * poly[i].y - poly[i].x * poly[j].y
+  return a / 2
+}
+
+/** Area-weighted centroid, i.e. the center of mass of a flat shard. */
+export function polygonCentroid(poly: Point[]): Point {
+  let cx = 0
+  let cy = 0
+  let a = 0
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const cross = poly[j].x * poly[i].y - poly[i].x * poly[j].y
+    a += cross
+    cx += (poly[j].x + poly[i].x) * cross
+    cy += (poly[j].y + poly[i].y) * cross
+  }
+  if (Math.abs(a) < 1e-9) return { ...poly[0] }
+  return { x: cx / (3 * a), y: cy / (3 * a) }
 }
 
 function tracePolygon(ctx: CanvasRenderingContext2D, poly: Point[]) {

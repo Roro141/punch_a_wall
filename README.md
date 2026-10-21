@@ -2,7 +2,7 @@
 
 Punch toward your webcam and the wall on screen breaks where you hit it.
 
-Hand tracking is MediaPipe's HandLandmarker, the shards are Voronoi cells (d3-delaunay), and they fall with matter-js. Everything runs in the browser and no video leaves your machine.
+Hand tracking is MediaPipe's HandLandmarker, the shards are Voronoi cells (d3-delaunay), and the wall and flying chunks are rendered in 3D with [Three.js](https://threejs.org): the wall is a lit slab with real thickness, each shard is an extruded chunk that tumbles out toward you, the camera lurches in on every hit, and a warm light follows your fist. Everything runs in the browser and no video leaves your machine.
 
 ## Running it
 
